@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+.env
+
+# Node / Vite
+frontend/node_modules/
+frontend/dist/
+frontend/.env*
+
+# Runs/Outputs
+runs/
+*.pt
+!yolov8n.pt
+!best.pt

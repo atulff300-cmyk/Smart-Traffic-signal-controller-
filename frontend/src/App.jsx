@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react'
 import './App.css'
 
+// Dynamic API URL for backend deployment (Render), fallback to localhost for development
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000'
+
 function App() {
   const [data, setData] = useState({
     total_vehicles: 0,
@@ -11,7 +14,7 @@ function App() {
   useEffect(() => {
     // Fetch data from Flask API every 1 second
     const interval = setInterval(() => {
-      fetch('http://127.0.0.1:5000/data')
+      fetch(`${API_BASE_URL}/data`)
         .then(res => res.json())
         .then(resData => setData(resData))
         .catch(err => console.error("API Fetch Error:", err))
@@ -34,7 +37,7 @@ function App() {
         <section className="video-section">
           <h2>Live Camera Feed</h2>
           <div className="video-wrapper">
-            <img src="http://127.0.0.1:5000/video_feed" alt="Live Feed" />
+            <img src={`${API_BASE_URL}/video_feed`} alt="Live Feed" />
           </div>
         </section>
 
