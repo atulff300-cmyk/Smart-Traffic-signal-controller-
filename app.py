@@ -3,10 +3,15 @@ import cv2
 import json
 import time
 import threading
+import gc
 import numpy as np
 from flask import Flask, Response, jsonify
 from flask_cors import CORS
 from ultralytics import YOLO
+import torch
+
+# Optimize PyTorch memory usage for 512MB RAM Limit on Render
+torch.set_num_threads(1)
 
 app = Flask(__name__)
 CORS(app)  # Allow React app to fetch data
@@ -72,8 +77,9 @@ def yolo_processing_loop():
                     time.sleep(0.05)
                     continue
             
-            # Run YOLO
-            results = model.predict(source=frame, classes=[2, 3, 5, 7], verbose=False)
+            # Run YOLO in inference mode (no gradients computed, saves memory)
+            with torch.no_grad():
+                results = model.predict(source=frame, classes=[2, 3, 5, 7], verbose=False)
             
             counts = {'Car': 0, 'Motorcycle': 0, 'Bus': 0, 'Truck': 0}
             total_vehicles = 0
@@ -101,6 +107,10 @@ def yolo_processing_loop():
                     current_stats['total_vehicles'] = total_vehicles
                     current_stats['green_time'] = green_time
                     current_stats['breakdown'] = counts
+            
+            # Explicitly delete results and trigger garbage collection to free memory
+            del results
+            gc.collect()
                     
         except Exception as e:
             print(f"Error in YOLO thread: {e}")
@@ -139,4 +149,5 @@ if __name__ == '__main__':
     # Dynamically bind to PORT assigned by Render, default to 5000 locally
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
+
 
