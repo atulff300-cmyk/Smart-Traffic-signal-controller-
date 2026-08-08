@@ -19,12 +19,23 @@ function App() {
 
   const startCamera = async () => {
     try {
+      console.log("Requesting user media...")
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: 640, height: 480 }
       })
+      
+      console.log("User media stream obtained. Binding to video element.")
       if (videoRef.current) {
         videoRef.current.srcObject = stream
+        // Explicitly trigger play to ensure readyState updates
+        try {
+          await videoRef.current.play()
+          console.log("Video playing successfully.")
+        } catch (playErr) {
+          console.error("Error calling play() on video element:", playErr)
+        }
       }
+      
       streamRef.current = stream
       setIsCameraOn(true)
     } catch (err) {
@@ -34,6 +45,7 @@ function App() {
   }
 
   const stopCamera = () => {
+    console.log("Stopping camera stream.")
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop())
       streamRef.current = null
@@ -51,11 +63,9 @@ function App() {
   }
 
   useEffect(() => {
-    // Attempt to start camera automatically on component load
     startCamera()
     
     return () => {
-      // Clean up camera stream on unmount
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop())
       }
@@ -74,14 +84,12 @@ function App() {
       if (video && video.readyState === video.HAVE_ENOUGH_DATA) {
         setIsProcessing(true)
         
-        // Draw current video frame to a temporary canvas
         const canvas = document.createElement('canvas')
         canvas.width = video.videoWidth
         canvas.height = video.videoHeight
         const ctx = canvas.getContext('2d')
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
         
-        // Convert canvas image to JPEG blob and upload
         canvas.toBlob(async (blob) => {
           if (!blob) {
             setIsProcessing(false)
@@ -93,6 +101,7 @@ function App() {
           formData.append('image', blob, 'frame.jpg')
           
           try {
+            console.log("Uploading frame to backend...")
             const response = await fetch(`${API_BASE_URL}/process_frame`, {
               method: 'POST',
               body: formData
@@ -100,6 +109,7 @@ function App() {
             const result = await response.json()
             
             if (active && result.annotated_image) {
+              console.log("Frame processed successfully. Vehicles detected:", result.total_vehicles)
               setProcessedImage(result.annotated_image)
               setData({
                 total_vehicles: result.total_vehicles,
@@ -108,20 +118,24 @@ function App() {
               })
             }
           } catch (error) {
-            console.error("Error processing webcam frame:", error)
+            console.error("Error processing webcam frame on backend:", error)
           } finally {
             setIsProcessing(false)
             if (active) setTimeout(captureFrame, 800)
           }
-        }, 'image/jpeg', 0.7) // Compress to 70% quality to optimize network speed
+        }, 'image/jpeg', 0.7)
       } else {
-        // Video frame not loaded/ready yet, retry soon
-        if (active) setTimeout(captureFrame, 200)
+        // If video is paused, force play it
+        if (video && video.paused) {
+          console.log("Video is paused in loop, attempting to play...")
+          video.play().catch(e => console.error("Play retry error:", e))
+        }
+        console.log("Waiting for video data... Current readyState:", video ? video.readyState : 'No Video')
+        if (active) setTimeout(captureFrame, 300)
       }
     }
 
-    // Delay the initial capture loop slightly to let the stream load
-    const timeoutId = setTimeout(captureFrame, 600)
+    const timeoutId = setTimeout(captureFrame, 800)
 
     return () => {
       active = false
