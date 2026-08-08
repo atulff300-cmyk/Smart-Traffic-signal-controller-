@@ -27,13 +27,14 @@ function App() {
       console.log("User media stream obtained. Binding to video element.")
       if (videoRef.current) {
         videoRef.current.srcObject = stream
-        // Explicitly trigger play to ensure readyState updates
         try {
           await videoRef.current.play()
           console.log("Video playing successfully.")
         } catch (playErr) {
           console.error("Error calling play() on video element:", playErr)
         }
+      } else {
+        console.error("videoRef.current is null! Cannot bind stream.")
       }
       
       streamRef.current = stream
@@ -125,12 +126,11 @@ function App() {
           }
         }, 'image/jpeg', 0.7)
       } else {
-        // If video is paused, force play it
-        if (video && video.paused) {
+        if (video && video.paused && video.srcObject) {
           console.log("Video is paused in loop, attempting to play...")
           video.play().catch(e => console.error("Play retry error:", e))
         }
-        console.log("Waiting for video data... Current readyState:", video ? video.readyState : 'No Video')
+        console.log("Waiting for video data... Current readyState:", video ? video.readyState : 'No Video', "Has srcObject:", video && !!video.srcObject)
         if (active) setTimeout(captureFrame, 300)
       }
     }
@@ -176,20 +176,21 @@ function App() {
             </div>
           </div>
           
-          {isCameraOn ? (
-            <div className="video-wrapper">
-              <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                muted
-                style={{ display: processedImage ? 'none' : 'block', width: '100%', objectFit: 'cover' }}
-              />
-              {processedImage && (
-                <img src={processedImage} alt="Annotated Live Feed" />
-              )}
-            </div>
-          ) : (
+          {/* Always keep the video element in the DOM so videoRef is populated immediately */}
+          <div className="video-wrapper" style={{ display: isCameraOn ? 'block' : 'none' }}>
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              style={{ display: processedImage ? 'none' : 'block', width: '100%', objectFit: 'cover' }}
+            />
+            {processedImage && (
+              <img src={processedImage} alt="Annotated Live Feed" />
+            )}
+          </div>
+          
+          {!isCameraOn && (
             <div className="camera-placeholder">
               <h3>Camera Offline</h3>
               <p>Click "Start Camera" to grant webcam access. The application will capture your camera stream in real-time, detect vehicles using YOLOv8, and calculate optimal traffic light timings.</p>
