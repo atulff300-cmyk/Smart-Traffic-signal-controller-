@@ -12,7 +12,8 @@ import torch
 from ultralytics import YOLO
 
 app = Flask(__name__)
-CORS(app)  # Allow React app to fetch data
+# Allow CORS for all domains and routes
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 # Load YOLO model
 torch.set_num_threads(1)
@@ -39,6 +40,14 @@ def get_green_light_time(vehicle_count):
     else:
         return 60
 
+# Add explicit CORS headers to every response (fixes preflight & error responses)
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    return response
+
 @app.route('/')
 def index():
     return jsonify({"status": "AI Traffic API is running"})
@@ -47,9 +56,14 @@ def index():
 def get_data():
     return jsonify(current_stats)
 
-@app.route('/process_frame', methods=['POST'])
+@app.route('/process_frame', methods=['POST', 'OPTIONS'])
 def process_frame():
     global current_stats
+    
+    # Handle preflight CORS request
+    if request.method == 'OPTIONS':
+        return jsonify({"status": "CORS preflight ok"}), 200
+        
     try:
         if 'image' not in request.files:
             return jsonify({"error": "No image file provided in the request"}), 400
