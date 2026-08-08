@@ -201,3 +201,91 @@ main {
         grid-template-columns: 1fr;
     }
 }
+
+/* Camera Controls */
+.camera-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.btn-control {
+    background: #10b981;
+    color: white;
+    border: none;
+    padding: 0.6rem 1.2rem;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 0.95rem;
+    transition: background 0.3s ease, transform 0.2s ease, box-shadow 0.3s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.btn-control:hover {
+    background: #059669;
+    transform: translateY(-1px);
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+.btn-control.stop {
+    background: #ef4444;
+}
+
+.btn-control.stop:hover {
+    background: #dc2626;
+}
+
+.camera-placeholder {
+    height: 480px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: #94a3b8;
+    background: #090d16;
+    border-radius: 12px;
+    border: 2px dashed rgba(255, 255, 255, 0.1);
+    padding: 2rem;
+    text-align: center;
+    gap: 1rem;
+    box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);
+}
+
+.camera-placeholder h3 {
+    color: #e2e8f0;
+    font-size: 1.3rem;
+    font-weight: 600;
+}
+
+.camera-placeholder p {
+    font-size: 0.95rem;
+    max-width: 400px;
+    line-height: 1.5;
+}
+
+.loading-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+    color: #38bdf8;
+    font-weight: 500;
+}
+
+.spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(56, 189, 248, 0.2);
+    border-top-color: #38bdf8;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}

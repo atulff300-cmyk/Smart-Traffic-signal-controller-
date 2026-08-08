@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import './App.css'
 
 // Dynamic API URL for backend deployment (Render), fallback to localhost for development
@@ -10,35 +10,180 @@ function App() {
     green_time: 10,
     breakdown: { Car: 0, Motorcycle: 0, Bus: 0, Truck: 0 }
   })
+  const [isCameraOn, setIsCameraOn] = useState(false)
+  const [processedImage, setProcessedImage] = useState(null)
+  const [isProcessing, setIsProcessing] = useState(false)
+  
+  const videoRef = useRef(null)
+  const streamRef = useRef(null)
+
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 640, height: 480 }
+      })
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+      }
+      streamRef.current = stream
+      setIsCameraOn(true)
+    } catch (err) {
+      console.error("Error accessing webcam:", err)
+      alert("Could not access camera. Please make sure camera permission is granted.")
+    }
+  }
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop())
+      streamRef.current = null
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null
+    }
+    setIsCameraOn(false)
+    setProcessedImage(null)
+    setData({
+      total_vehicles: 0,
+      green_time: 10,
+      breakdown: { Car: 0, Motorcycle: 0, Bus: 0, Truck: 0 }
+    })
+  }
 
   useEffect(() => {
-    // Fetch data from Flask API every 1 second
-    const interval = setInterval(() => {
-      fetch(`${API_BASE_URL}/data`)
-        .then(res => res.json())
-        .then(resData => setData(resData))
-        .catch(err => console.error("API Fetch Error:", err))
-    }, 1000)
+    // Attempt to start camera automatically on component load
+    startCamera()
     
-    return () => clearInterval(interval)
+    return () => {
+      // Clean up camera stream on unmount
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop())
+      }
+    }
   }, [])
+
+  // Process frames periodically when camera is active
+  useEffect(() => {
+    if (!isCameraOn) return
+
+    let active = true
+    const captureFrame = async () => {
+      if (!active || !isCameraOn) return
+      
+      const video = videoRef.current
+      if (video && video.readyState === video.HAVE_ENOUGH_DATA) {
+        setIsProcessing(true)
+        
+        // Draw current video frame to a temporary canvas
+        const canvas = document.createElement('canvas')
+        canvas.width = video.videoWidth
+        canvas.height = video.videoHeight
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+        
+        // Convert canvas image to JPEG blob and upload
+        canvas.toBlob(async (blob) => {
+          if (!blob) {
+            setIsProcessing(false)
+            if (active) setTimeout(captureFrame, 800)
+            return
+          }
+          
+          const formData = new FormData()
+          formData.append('image', blob, 'frame.jpg')
+          
+          try {
+            const response = await fetch(`${API_BASE_URL}/process_frame`, {
+              method: 'POST',
+              body: formData
+            })
+            const result = await response.json()
+            
+            if (active && result.annotated_image) {
+              setProcessedImage(result.annotated_image)
+              setData({
+                total_vehicles: result.total_vehicles,
+                green_time: result.green_time,
+                breakdown: result.breakdown
+              })
+            }
+          } catch (error) {
+            console.error("Error processing webcam frame:", error)
+          } finally {
+            setIsProcessing(false)
+            if (active) setTimeout(captureFrame, 800)
+          }
+        }, 'image/jpeg', 0.7) // Compress to 70% quality to optimize network speed
+      } else {
+        // Video frame not loaded/ready yet, retry soon
+        if (active) setTimeout(captureFrame, 200)
+      }
+    }
+
+    // Delay the initial capture loop slightly to let the stream load
+    const timeoutId = setTimeout(captureFrame, 600)
+
+    return () => {
+      active = false
+      clearTimeout(timeoutId)
+    }
+  }, [isCameraOn])
 
   return (
     <div className="dashboard-container">
       <header>
         <div className="logo">
-          <span className="dot live"></span>
+          <span className={`dot ${isCameraOn ? 'live' : ''}`}></span>
           <h1>Smart Traffic AI Controller</h1>
         </div>
-        <div className="status">System Active</div>
+        <div className="status">{isCameraOn ? 'System Active' : 'System Paused'}</div>
       </header>
 
       <main>
         <section className="video-section">
-          <h2>Live Camera Feed</h2>
-          <div className="video-wrapper">
-            <img src={`${API_BASE_URL}/video_feed`} alt="Live Feed" />
+          <div className="camera-controls">
+            <h2>Live Camera Feed</h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              {isProcessing && (
+                <div className="loading-indicator">
+                  <div className="spinner"></div>
+                  <span>Analyzing...</span>
+                </div>
+              )}
+              {isCameraOn ? (
+                <button className="btn-control stop" onClick={stopCamera}>
+                  🛑 Stop Camera
+                </button>
+              ) : (
+                <button className="btn-control" onClick={startCamera}>
+                  📷 Start Camera
+                </button>
+              )}
+            </div>
           </div>
+          
+          {isCameraOn ? (
+            <div className="video-wrapper">
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                style={{ display: processedImage ? 'none' : 'block', width: '100%', objectFit: 'cover' }}
+              />
+              {processedImage && (
+                <img src={processedImage} alt="Annotated Live Feed" />
+              )}
+            </div>
+          ) : (
+            <div className="camera-placeholder">
+              <h3>Camera Offline</h3>
+              <p>Click "Start Camera" to grant webcam access. The application will capture your camera stream in real-time, detect vehicles using YOLOv8, and calculate optimal traffic light timings.</p>
+              <button className="btn-control" onClick={startCamera}>
+                📷 Start Camera
+              </button>
+            </div>
+          )}
         </section>
 
         <section className="data-section">
