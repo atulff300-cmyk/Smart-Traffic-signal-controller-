@@ -20,7 +20,7 @@ except ImportError:
     HAS_ULTRALYTICS = False
 
 # Path to YOLOv8 ONNX model (fallback for lightweight production deployment)
-MODEL_PATH = 'yolov8n.onnx'
+MODEL_PATH = 'best.onnx' if os.path.exists('best.onnx') else 'yolov8n.onnx'
 
 # Load model
 net = None
