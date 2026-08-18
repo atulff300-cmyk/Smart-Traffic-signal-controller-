@@ -1,8 +1,10 @@
+import os
 import cv2
 from ultralytics import YOLO
 
-# Pre-trained YOLOv8n model
-model = YOLO('yolov8n.pt')
+# Model path selection (prioritize yolov8s.pt -> best.pt -> yolov8n.pt)
+model_path = 'yolov8s.pt' if os.path.exists('yolov8s.pt') else ('best.pt' if os.path.exists('best.pt') else 'yolov8n.pt')
+model = YOLO(model_path)
 
 image_path = 'check img trafific 2.jpg'
 print("Original Model load ho gaya, image par check kar rahe hain...\n")

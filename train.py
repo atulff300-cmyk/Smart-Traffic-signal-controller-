@@ -1,7 +1,7 @@
 from ultralytics import YOLO
 
-# Model load kar rahe hain (yolov8n - nano version jo fast aur halka hai)
-model = YOLO('yolov8n.pt')
+# Model load kar rahe hain (yolov8s - small version jo fine accuracy deta hai)
+model = YOLO('yolov8s.pt')
 
 # Training shuru kar rahe hain
 model.train(

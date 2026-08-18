@@ -20,22 +20,25 @@ except ImportError:
     HAS_ULTRALYTICS = False
 
 # Path to YOLOv8 ONNX model (fallback for lightweight production deployment)
-MODEL_PATH = 'best.onnx' if os.path.exists('best.onnx') else 'yolov8n.onnx'
+MODEL_PATH = 'yolov8s.onnx' if os.path.exists('yolov8s.onnx') else ('best.onnx' if os.path.exists('best.onnx') else 'yolov8n.onnx')
 
 # Load model
 net = None
 yolo_model = None
 
 if HAS_ULTRALYTICS:
-    # Try loading custom model (best.pt) first, then base model (yolov8n.pt)
-    if os.path.exists('best.pt'):
+    # Try loading yolov8s.pt model first, then custom model (best.pt), then base model (yolov8n.pt)
+    if os.path.exists('yolov8s.pt'):
+        print("Loading YOLOv8 Small model (yolov8s.pt) using Ultralytics...")
+        yolo_model = YOLO('yolov8s.pt')
+    elif os.path.exists('best.pt'):
         print("Loading custom trained YOLOv8 model (best.pt) using Ultralytics...")
         yolo_model = YOLO('best.pt')
     elif os.path.exists('yolov8n.pt'):
         print("Loading base YOLOv8 model (yolov8n.pt) using Ultralytics...")
         yolo_model = YOLO('yolov8n.pt')
     else:
-        print("WARNING: Neither best.pt nor yolov8n.pt found for Ultralytics.")
+        print("WARNING: Neither yolov8s.pt, best.pt nor yolov8n.pt found for Ultralytics.")
 
 # Fallback to ONNX if Ultralytics is not available or failed to load a .pt model
 if yolo_model is None:
@@ -174,45 +177,51 @@ def process_frame():
         counts = {'Car': 0, 'Motorcycle': 0, 'Bus': 0, 'Truck': 0}
         total_vehicles = 0
         
+        detected_boxes = []
+        img_h, img_w = frame.shape[:2]
+        
         if yolo_model is not None:
             # --- Inference using Ultralytics YOLO ---
-            # Set confidence threshold to 0.15 (more sensitive for webcam test) and use dynamic predict_classes
-            results = yolo_model.predict(source=frame, classes=predict_classes, conf=0.15, verbose=False)
+            # Set confidence threshold to 0.15 and imgsz=320 for ultra-fast CPU inference
+            results = yolo_model.predict(source=frame, classes=predict_classes, conf=0.15, imgsz=320, verbose=False)
             
             # Count the vehicles (ignoring Person for traffic calculations)
             raw_boxes = results[0].boxes
-            print(f"[Debug] Processed frame. Found {len(raw_boxes)} objects:")
             
             for box in raw_boxes:
                 class_id = int(box.cls[0])
                 conf = float(box.conf[0])
-                label = model_names.get(class_id, f"Class {class_id}")
-                print(f"  - {label} (confidence: {conf:.2f})")
-                
                 if class_id in class_names:
                     v_type = class_names[class_id]
                     if v_type != 'Person':
                         counts[v_type] += 1
                         total_vehicles += 1
-            
-            # Plot detections on the frame
-            frame = results[0].plot()
+                    
+                    x1, y1, x2, y2 = box.xyxy[0].tolist()
+                    detected_boxes.append({
+                        "x1": round(x1, 1),
+                        "y1": round(y1, 1),
+                        "x2": round(x2, 1),
+                        "y2": round(y2, 1),
+                        "class": v_type,
+                        "confidence": round(conf, 2)
+                    })
             
         else:
             # --- Inference using OpenCV DNN with ONNX ---
-            # Get frame size for coordinate scaling
-            img_h, img_w = frame.shape[:2]
-            
-            # Prepare image for YOLOv8 (640x640, RGB format, normalized to [0,1])
             blob = cv2.dnn.blobFromImage(frame, 1/255.0, (640, 640), swapRB=True, crop=False)
             net.setInput(blob)
-            
-            # Run inference: Output shape is [1, 84, 8400] for YOLOv8
             outputs = net.forward()
             
-            # Post-process detections
-            output = outputs[0].transpose() # Shape: (8400, 84)
-            
+            # For YOLOv8, outputs shape is (1, 84, 8400) or similar
+            if isinstance(outputs, (list, tuple)):
+                outputs = outputs[0]
+                
+            if len(outputs.shape) == 3:
+                output = outputs[0].transpose() # Shape: (8400, 84)
+            else:
+                output = outputs.transpose()
+                
             boxes = []
             confidences = []
             class_ids = []
@@ -222,57 +231,48 @@ def process_frame():
             
             for row in output:
                 classes_scores = row[4:]
-                class_id = np.argmax(classes_scores)
-                confidence = classes_scores[class_id]
+                class_id = int(np.argmax(classes_scores))
+                confidence = float(classes_scores[class_id])
                 
-                # Filter by confidence threshold (0.15) and classes of interest
                 if confidence > 0.15 and class_id in class_names:
                     xc, yc, w, h = row[0:4]
-                    # Convert center coordinates to bounding box corner coordinates
                     left = int((xc - w/2) * x_factor)
                     top = int((yc - h/2) * y_factor)
                     width = int(w * x_factor)
                     height = int(h * y_factor)
                     
                     boxes.append([left, top, width, height])
-                    confidences.append(float(confidence))
+                    confidences.append(confidence)
                     class_ids.append(class_id)
-                    
-            # Apply Non-Maximum Suppression (NMS) to eliminate overlapping boxes
-            indices = cv2.dnn.NMSBoxes(boxes, confidences, 0.15, 0.5)
             
-            # Draw bounding boxes and text labels
-            for i in indices:
-                idx = i[0] if isinstance(i, (list, np.ndarray)) else i
-                box = boxes[idx]
-                cid = class_ids[idx]
-                conf = confidences[idx]
+            if len(boxes) > 0:
+                indices = cv2.dnn.NMSBoxes(boxes, confidences, 0.15, 0.5)
+                if len(indices) > 0:
+                    for i in indices:
+                        idx = i[0] if isinstance(i, (list, np.ndarray)) else i
+                        box = boxes[idx]
+                        cid = class_ids[idx]
+                        conf = confidences[idx]
+                        
+                        v_type = class_names[cid]
+                        if v_type != 'Person':
+                            counts[v_type] += 1
+                            total_vehicles += 1
+                        
+                        x, y, w, h = box
+                        detected_boxes.append({
+                            "x1": round(float(x), 1),
+                            "y1": round(float(y), 1),
+                            "x2": round(float(x + w), 1),
+                            "y2": round(float(y + h), 1),
+                            "class": v_type,
+                            "confidence": round(float(conf), 2)
+                        })
                 
-                v_type = class_names[cid]
-                if v_type != 'Person':
-                    counts[v_type] += 1
-                    total_vehicles += 1
-                
-                x, y, w, h = box
-                color = colors[cid]
-                cv2.rectangle(frame, (x, y), (x+w, y+h), color, 2)
-                
-                label = f"{v_type}: {int(conf * 100)}%"
-                cv2.putText(frame, label, (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
-                
-            # Clean memory explicitly
             del outputs
             gc.collect()
             
         green_time = get_green_light_time(total_vehicles)
-        
-        # Compress annotated frame to jpeg
-        ret, buffer = cv2.imencode('.jpg', frame)
-        if not ret:
-            return jsonify({"error": "Failed to encode annotated image"}), 500
-            
-        # Base64 encode the JPEG image
-        img_base64 = base64.b64encode(buffer).decode('utf-8')
         
         # Update global cache
         current_stats['total_vehicles'] = total_vehicles
@@ -280,10 +280,12 @@ def process_frame():
         current_stats['breakdown'] = counts
         
         return jsonify({
-            "annotated_image": f"data:image/jpeg;base64,{img_base64}",
             "total_vehicles": total_vehicles,
             "green_time": green_time,
-            "breakdown": counts
+            "breakdown": counts,
+            "boxes": detected_boxes,
+            "img_width": img_w,
+            "img_height": img_h
         })
     except Exception as e:
         print(f"Error in process_frame: {e}")

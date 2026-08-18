@@ -2,7 +2,12 @@ import os
 from ultralytics import YOLO
 
 def export_model():
-    if os.path.exists('best.pt'):
+    if os.path.exists('yolov8s.pt'):
+        print("Found model 'yolov8s.pt'. Exporting to ONNX...")
+        model = YOLO('yolov8s.pt')
+        model.export(format='onnx', imgsz=640)
+        print("Export complete. 'yolov8s.onnx' should be created.")
+    elif os.path.exists('best.pt'):
         print("Found custom model 'best.pt'. Exporting to ONNX...")
         model = YOLO('best.pt')
         model.export(format='onnx', imgsz=640)

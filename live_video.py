@@ -1,7 +1,9 @@
+import os
 import cv2
 from ultralytics import YOLO
 
-model = YOLO('yolov8n.pt')
+model_path = 'yolov8s.pt' if os.path.exists('yolov8s.pt') else ('best.pt' if os.path.exists('best.pt') else 'yolov8n.pt')
+model = YOLO(model_path)
 cap = cv2.VideoCapture(0)
 
 print("Live Video start ho rahi hai... (Band karne ke liye window par click karke 'q' dabayein)")
