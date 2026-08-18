@@ -11,11 +11,11 @@ function App() {
     breakdown: { Car: 0, Motorcycle: 0, Bus: 0, Truck: 0 }
   })
   const [isCameraOn, setIsCameraOn] = useState(false)
-  const [processedImage, setProcessedImage] = useState(null)
   const [isProcessing, setIsProcessing] = useState(false)
   
   const videoRef = useRef(null)
   const streamRef = useRef(null)
+  const overlayCanvasRef = useRef(null)
 
   const startCamera = async () => {
     try {
@@ -24,17 +24,13 @@ function App() {
         video: { width: 640, height: 480 }
       })
       
-      console.log("User media stream obtained. Binding to video element.")
       if (videoRef.current) {
         videoRef.current.srcObject = stream
         try {
           await videoRef.current.play()
-          console.log("Video playing successfully.")
         } catch (playErr) {
-          console.error("Error calling play() on video element:", playErr)
+          console.error("Error calling play():", playErr)
         }
-      } else {
-        console.error("videoRef.current is null! Cannot bind stream.")
       }
       
       streamRef.current = stream
@@ -46,7 +42,6 @@ function App() {
   }
 
   const stopCamera = () => {
-    console.log("Stopping camera stream.")
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop())
       streamRef.current = null
@@ -55,17 +50,20 @@ function App() {
       videoRef.current.srcObject = null
     }
     setIsCameraOn(false)
-    setProcessedImage(null)
     setData({
       total_vehicles: 0,
       green_time: 10,
       breakdown: { Car: 0, Motorcycle: 0, Bus: 0, Truck: 0 }
     })
+    const canvas = overlayCanvasRef.current
+    if (canvas) {
+      const ctx = canvas.getContext('2d')
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+    }
   }
 
   useEffect(() => {
     startCamera()
-    
     return () => {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop())
@@ -85,16 +83,20 @@ function App() {
       if (video && video.readyState === video.HAVE_ENOUGH_DATA) {
         setIsProcessing(true)
         
+        const targetWidth = 480
+        const scale = video.videoWidth ? targetWidth / video.videoWidth : 1
+        const targetHeight = Math.round((video.videoHeight || 360) * scale)
+        
         const canvas = document.createElement('canvas')
-        canvas.width = video.videoWidth
-        canvas.height = video.videoHeight
+        canvas.width = targetWidth
+        canvas.height = targetHeight
         const ctx = canvas.getContext('2d')
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+        ctx.drawImage(video, 0, 0, targetWidth, targetHeight)
         
         canvas.toBlob(async (blob) => {
           if (!blob) {
             setIsProcessing(false)
-            if (active) setTimeout(captureFrame, 800)
+            if (active) setTimeout(captureFrame, 300)
             return
           }
           
@@ -102,40 +104,73 @@ function App() {
           formData.append('image', blob, 'frame.jpg')
           
           try {
-            console.log("Uploading frame to backend...")
             const response = await fetch(`${API_BASE_URL}/process_frame`, {
               method: 'POST',
               body: formData
             })
             const result = await response.json()
             
-            if (active && result.annotated_image) {
-              console.log("Frame processed successfully. Vehicles detected:", result.total_vehicles)
-              setProcessedImage(result.annotated_image)
+            if (active && result) {
               setData({
                 total_vehicles: result.total_vehicles,
                 green_time: result.green_time,
                 breakdown: result.breakdown
               })
+              
+              // Draw bounding boxes on transparent canvas overlay over smooth 60 FPS video
+              const overlay = overlayCanvasRef.current
+              if (overlay && videoRef.current) {
+                overlay.width = videoRef.current.clientWidth || 640
+                overlay.height = videoRef.current.clientHeight || 480
+                const oCtx = overlay.getContext('2d')
+                oCtx.clearRect(0, 0, overlay.width, overlay.height)
+                
+                if (result.boxes && result.img_width && result.img_height) {
+                  const scaleX = overlay.width / result.img_width
+                  const scaleY = overlay.height / result.img_height
+                  
+                  result.boxes.forEach(box => {
+                    const x = box.x1 * scaleX
+                    const y = box.y1 * scaleY
+                    const w = (box.x2 - box.x1) * scaleX
+                    const h = (box.y2 - box.y1) * scaleY
+                    
+                    const color = box.class === 'Car' ? '#10b981' : 
+                                 (box.class === 'Motorcycle' ? '#ef4444' : 
+                                 (box.class === 'Bus' ? '#3b82f6' : '#f59e0b'))
+                    
+                    oCtx.strokeStyle = color
+                    oCtx.lineWidth = 3
+                    oCtx.strokeRect(x, y, w, h)
+                    
+                    oCtx.fillStyle = color
+                    const text = `${box.class} ${Math.round(box.confidence * 100)}%`
+                    oCtx.font = 'bold 13px Inter, sans-serif'
+                    const textWidth = oCtx.measureText(text).width
+                    oCtx.fillRect(x, Math.max(0, y - 22), textWidth + 8, 20)
+                    
+                    oCtx.fillStyle = '#ffffff'
+                    oCtx.fillText(text, x + 4, Math.max(14, y - 7))
+                  })
+                }
+              }
             }
           } catch (error) {
             console.error("Error processing webcam frame on backend:", error)
           } finally {
             setIsProcessing(false)
-            if (active) setTimeout(captureFrame, 800)
+            if (active) setTimeout(captureFrame, 300)
           }
-        }, 'image/jpeg', 0.7)
+        }, 'image/jpeg', 0.5)
       } else {
         if (video && video.paused && video.srcObject) {
-          console.log("Video is paused in loop, attempting to play...")
           video.play().catch(e => console.error("Play retry error:", e))
         }
-        console.log("Waiting for video data... Current readyState:", video ? video.readyState : 'No Video', "Has srcObject:", video && !!video.srcObject)
         if (active) setTimeout(captureFrame, 300)
       }
     }
 
-    const timeoutId = setTimeout(captureFrame, 800)
+    const timeoutId = setTimeout(captureFrame, 300)
 
     return () => {
       active = false
@@ -176,18 +211,26 @@ function App() {
             </div>
           </div>
           
-          {/* Always keep the video element in the DOM so videoRef is populated immediately */}
-          <div className="video-wrapper" style={{ display: isCameraOn ? 'block' : 'none' }}>
+          <div className="video-wrapper" style={{ position: 'relative', display: isCameraOn ? 'block' : 'none' }}>
             <video
               ref={videoRef}
               autoPlay
               playsInline
               muted
-              style={{ display: processedImage ? 'none' : 'block', width: '100%', objectFit: 'cover' }}
+              style={{ width: '100%', display: 'block', borderRadius: '12px' }}
             />
-            {processedImage && (
-              <img src={processedImage} alt="Annotated Live Feed" />
-            )}
+            <canvas
+              ref={overlayCanvasRef}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                pointerEvents: 'none',
+                borderRadius: '12px'
+              }}
+            />
           </div>
           
           {!isCameraOn && (
