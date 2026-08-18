@@ -20,25 +20,18 @@ except ImportError:
     HAS_ULTRALYTICS = False
 
 # Path to YOLOv8 ONNX model (fallback for lightweight production deployment)
-MODEL_PATH = 'yolov8s.onnx' if os.path.exists('yolov8s.onnx') else ('best.onnx' if os.path.exists('best.onnx') else 'yolov8n.onnx')
+MODEL_PATH = 'yolov8s.onnx'
 
 # Load model
 net = None
 yolo_model = None
 
 if HAS_ULTRALYTICS:
-    # Try loading yolov8s.pt model first, then custom model (best.pt), then base model (yolov8n.pt)
     if os.path.exists('yolov8s.pt'):
         print("Loading YOLOv8 Small model (yolov8s.pt) using Ultralytics...")
         yolo_model = YOLO('yolov8s.pt')
-    elif os.path.exists('best.pt'):
-        print("Loading custom trained YOLOv8 model (best.pt) using Ultralytics...")
-        yolo_model = YOLO('best.pt')
-    elif os.path.exists('yolov8n.pt'):
-        print("Loading base YOLOv8 model (yolov8n.pt) using Ultralytics...")
-        yolo_model = YOLO('yolov8n.pt')
     else:
-        print("WARNING: Neither yolov8s.pt, best.pt nor yolov8n.pt found for Ultralytics.")
+        print("WARNING: yolov8s.pt not found for Ultralytics.")
 
 # Fallback to ONNX if Ultralytics is not available or failed to load a .pt model
 if yolo_model is None:
@@ -49,7 +42,7 @@ if yolo_model is None:
         net.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
         print("ONNX Model loaded successfully.")
     else:
-        print(f"WARNING: {MODEL_PATH} not found. Please export and push the ONNX file.")
+        print(f"WARNING: {MODEL_PATH} not found.")
 
 # Global variables for caching latest stats
 current_stats = {
